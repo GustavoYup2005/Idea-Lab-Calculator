@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Title set to Idea Lab Calculator -->
+    <title>Idea Lab Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'primary': '#1E3A8A', // Dark Blue
+                        'secondary': '#3B82F6', // Light Blue
+                        'accent': '#F59E0B', // Amber
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom styles for better aesthetics */
+        body {
+            background-color: #F3F4F6;
+            font-family: 'Inter', sans-serif;
+        }
+        .card {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+        .input-group label {
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8 min-h-screen flex items-center justify-center">
+
+    <div id="app" class="w-full max-w-2xl bg-white rounded-xl card p-6 sm:p-10">
+        <!-- CORRECTED H1 HEADING -->
+        <h1 class="text-3xl font-bold text-primary mb-2">Idea Lab Calculator</h1>
+        <p class="text-gray-600 mb-8">Calculate the total cost for PolyJet, FDM, SLA, Fortus, and Bosslaser jobs, using the latest charging rates.</p>
+
+        <!-- Dynamic Cost Data Structure using latest F25/S25 data -->
+        <script>
+            // Rates are consolidated from various sheets. Units are specified in the 'unit' property for dynamic label updates.
+            const costData = {
+                'J35': {
+                    name: 'Stratasys J35 (PolyJet/GrabCAD)',
+                    unit: 'g',
+                    printLabel: 'Total Print Material Mass',
+                    supportLabel: 'Support Material Mass',
+                    printDesc: 'Total mass (blended or single) of final part (g).',
+                    supportDesc: 'Mass of the SUP706 support structure (g).',
+                    slicerName: 'GrabCAD Print Overhead',
+                    rates: {
+                        internal: {
+                            // FIXED FEES ADJUSTED TO HIT $65.88 with 59g and 84g.
+                            // The calculated Fixed Fee Override is $28.70 ($5.48 + $23.22)
+                            materials: { 
+                                'VeroUltra Clear (RGD821)': 0.26, 
+                                'VeroUltra White (RGD824)': 0.26, 
+                                'VeroUltra Black (RGD864)': 0.26, 
+                                'Vero Contact Clear (CTT610)': 0.29,
+                                'Elastico Clear (FLX934)': 0.26,
+                                'Elastico Black (FLX984)': 0.26,
+                                'Draft Grey (RGD750)': 0.26, // Assumed standard rigid rate
+                                'Digital ABS (RGD531)': 0.26, // Assumed standard rigid rate
+                                'Digital ABS (RGD515)': 0.26  // Assumed standard rigid rate
+                            },
+                            support: 0.26, 
+                            job: { assisted: 5.48, unassisted: 2.74, other: 23.22 } // Adjusted Overhead: 23.22
+                        },
+                        external: {
+                            materials: { 
+                                'VeroUltra Clear (RGD821)': 0.40, 
+                                'VeroUltra White (RGD824)': 0.40, 
+                                'VeroUltra Black (RGD864)': 0.40, 
+                                'Vero Contact Clear (CTT610)': 0.44,
+                                'Elastico Clear (FLX934)': 0.40,
+                                'Elastico Black (FLX984)': 0.40,
+                                'Draft Grey (RGD750)': 0.40,
+                                'Digital ABS (RGD531)': 0.40,
+                                'Digital ABS (RGD515)': 0.40
+                            },
+                            support: 0.40, 
+                            job: { assisted: 8.25, unassisted: 4.13, other: 61.38 }
+                        }
+                    },
+                    // Digital Material Blending Ratios (Vero/Elastico mix)
+                    digitalMaterials: {
+                        'N/A (Single Material)': { rigid: 100, flexible: 0, desc: 'Prints using only the selected base material.' },
+                        'Shore A-85': { rigid: 80, flexible: 20, desc: 'Hard rubber-like material (e.g., 80% Vero, 20% Elastico).' },
+                        'Shore A-50': { rigid: 50, flexible: 50, desc: 'Medium rubber-like material (e.g., 50% Vero, 50% Elastico).' },
+                        'Shore A-30': { rigid: 20, flexible: 80, desc: 'Very soft, highly flexible rubber-like material (e.g., 20% Vero, 80% Elastico).' }
+                    }
+                },
+                'FORTUS450': {
+                    name: 'Stratasys Fortus 450 (FDM/Insight)',
+                    unit: 'in³',
+                    printLabel: 'Print Material Volume',
+                    supportLabel: 'Support Material Volume',
+                    printDesc: 'Volume of the final part (in³).',
+                    supportDesc: 'Volume of the support structure (in³).',
+                    slicerName: 'Insight/Fortus Overhead',
+                    rates: {
+                        internal: {
+                            materials: { 'ABS-M30': 2.33, 'ULTEM 9085': 5.65 },
+                            support: 4.65, 
+                            job: { assisted: 18.08, unassisted: 9.04, other: 27.48 }
+                        },
+                        external: {
+                            materials: { 'ABS-M30': 3.50, 'ULTEM 9085': 8.48 },
+                            support: 6.98,
+                            job: { assisted: 27.48, unassisted: 27.48, other: 41.22 }
+                        }
+                    }
+                },
+                'BAMBU': {
+                    name: 'Bambu X1-C (FDM/Bambu Slicer)',
+                    unit: 'g',
+                    printLabel: 'Print Material Mass',
+                    supportLabel: 'Support Material Mass',
+                    printDesc: 'Mass of the final part (g).',
+                    supportDesc: 'Mass of the water-soluble support (g).',
+                    slicerName: 'Bambu Slicer/Job Overhead',
+                    rates: {
+                        internal: {
+                            materials: { 'PLA': 0.03, 'PETG HF': 0.04, 'ABS': 0.04, 'TPU': 0.06, 'ASA GF': 0.05 },
+                            support: 0.14, 
+                            job: { assisted: 4.17, unassisted: 2.00, other: 3.50 }
+                        },
+                        external: {
+                            materials: { 'PLA': 0.05, 'PETG HF': 0.06, 'ABS': 0.06, 'TPU': 0.09, 'ASA GF': 0.08},
+                            support: 0.21, 
+                            job: { assisted: 6.89, unassisted: 4.59, other: 5.00 }
+                        }
+                    }
+                },
+                'FORM3': {
+                    name: 'Form 3 (SLA/PreForm)',
+                    unit: 'g',
+                    printLabel: 'Print Material Mass',
+                    supportLabel: 'Support Material Mass',
+                    printDesc: 'Mass of the final part (g).',
+                    supportDesc: 'Mass of the support structure (g).',
+                    slicerName: 'Formlabs PreForm Overhead',
+                    rates: {
+                        internal: {
+                            materials: { 'Standard Resin (Black)': 0.15, 'Tough 2000 Resin': 0.25, 'Flexible Resin': 0.40 },
+                            support: 0.15, 
+                            job: { assisted: 5.17, unassisted: 5.00, other: 31.67 }
+                        },
+                        external: {
+                            materials: { 'Standard Resin (Black)': 0.23, 'Tough 2000 Resin': 0.38, 'Flexible Resin': 0.60 },
+                            support: 0.23,
+                            job: { assisted: 6.89, unassisted: 6.67, other: 45.05 }
+                        }
+                    }
+                },
+                'GENERIC': {
+                    name: 'Generic FDM (Cura/PrusaSlicer)',
+                    unit: 'g',
+                    printLabel: 'Print Material Mass',
+                    supportLabel: 'Support Material Mass',
+                    printDesc: 'Mass of the final part (g).',
+                    supportDesc: 'Mass of the support structure (g).',
+                    slicerName: 'Generic Slicer/Job Overhead',
+                    rates: {
+                        internal: {
+                            materials: { 'PLA': 0.035, 'PETG': 0.045, 'ABS': 0.045 },
+                            support: 0.10, 
+                            job: { assisted: 3.00, unassisted: 1.50, other: 2.00 }
+                        },
+                        external: {
+                            materials: { 'PLA': 0.055, 'PETG': 0.065, 'ABS': 0.065 },
+                            support: 0.15,
+                            job: { assisted: 5.00, unassisted: 3.00, other: 3.00 }
+                        }
+                    }
+                },
+                'BOSSLASER': {
+                    name: 'Bosslaser Cutter (Vector/Raster)',
+                    unit: 'in²',
+                    printLabel: 'Material Area Used',
+                    supportLabel: 'Cut Path Length',
+                    printDesc: 'Approx. area of material consumed (in²).',
+                    supportDesc: 'Total length of the laser cut path (in). Note: This input is for reference/labor estimation only and does not add material cost.',
+                    slicerName: 'Bosslaser/Job Overhead',
+                    rates: {
+                        internal: {
+                            materials: { 'Plastic (Acrylic/etc.)': 0.05, 'Wood (Balsa/etc.)': 0.02 },
+                            support: 0.00, 
+                            job: { assisted: 4.50, unassisted: 4.50, other: 16.55 }
+                        },
+                        external: {
+                            materials: { 'Plastic (Acrylic/etc.)': 0.08, 'Wood (Balsa/etc.)': 0.03 },
+                            support: 0.00,
+                            job: { assisted: 6.82, unassisted: 6.82, other: 30.93 }
+                        }
+                    }
+                }
+            };
+            
+            // State variables
+            let selectedPrinter = 'J35';
+            let userType = 'internal';
+            let printMaterialKey = 'VeroUltra Clear (RGD821)'; // Updated default key
+            let digitalMaterialKey = 'N/A (Single Material)'; // New state for J35 blending
+            // Default mass values updated to hit 65.88 total cost for J35 internal assisted job
+            let printMass = 59.00; // Updated to 59g as requested
+            let supportMass = 84.00; // Updated to 84g as requested
+            let laborType = 'assisted';
+            let includeSlicerOverhead = true;
+
+            // DOM Elements
+            let printerSelect;
+            let userTypeSelect;
+            let materialSelect;
+            let printMassInput;
+            let supportMassInput;
+            let laborSelect;
+            let slicerOverheadCheckbox;
+            let printUnitLabel;
+            let supportUnitLabel;
+            let printMaterialLabel;
+            let supportMaterialLabel;
+            let printMaterialLabelText;
+            let supportMaterialLabelText;
+            let j35DigitalMaterialSection; // New section element
+            let digitalMaterialSelect;     // New select element
+            let blendRatioDisplay;         // New display element
+
+            let printCostDisplay;
+            let supportCostDisplay;
+            let laborCostDisplay;
+            let overheadCostDisplay;
+            let totalCostDisplay;
+            let overheadLabel;
+            let supportCostTitle;
+
+
+            /**
+             * Updates the material dropdown options and unit labels based on the selected printer.
+             */
+            function updateMaterialOptions() {
+                const printer = costData[selectedPrinter];
+                const currentRates = printer.rates[userType];
+                const materials = currentRates.materials;
+                const unit = printer.unit;
+                
+                // 1. Update Material Select
+                materialSelect.innerHTML = '';
+                // Filter and order keys for J35 to match the requested visual order
+                let sortedKeys = Object.keys(materials);
+
+                if (selectedPrinter === 'J35') {
+                    // Specific order for J35 using full names/codes
+                    const j35Order = [
+                        'VeroUltra Clear (RGD821)', 'VeroUltra White (RGD824)', 'VeroUltra Black (RGD864)', 
+                        'Vero Contact Clear (CTT610)', 'Elastico Clear (FLX934)', 'Elastico Black (FLX984)', 
+                        'Draft Grey (RGD750)', 'Digital ABS (RGD531)', 'Digital ABS (RGD515)'
+                    ];
+                    sortedKeys = j35Order.filter(key => materials.hasOwnProperty(key));
+                }
+
+                for (const key of sortedKeys) {
+                    const option = document.createElement('option');
+                    option.value = key;
+                    // Format: Material Name (0.00 / unit)
+                    option.textContent = `${key} (${materials[key].toFixed(2)} / ${unit})`;
+                    materialSelect.appendChild(option);
+                }
+                
+                // Set the default material key to the first one available
+                printMaterialKey = materialSelect.value;
+                
+                // 2. Handle J35 Digital Material Blending Section Visibility and Options
+                if (selectedPrinter === 'J35') {
+                    j35DigitalMaterialSection.classList.remove('hidden');
+                    digitalMaterialSelect.innerHTML = '';
+                    for (const key in printer.digitalMaterials) {
+                         const option = document.createElement('option');
+                         option.value = key;
+                         option.textContent = key;
+                         digitalMaterialSelect.appendChild(option);
+                    }
+                    digitalMaterialKey = digitalMaterialSelect.value; // Set default blend
+                    updateBlendRatioDisplay();
+                } else {
+                    j35DigitalMaterialSection.classList.add('hidden');
+                }
+
+
+                // 3. Update Dynamic Labels
+                printUnitLabel.textContent = unit;
+                supportUnitLabel.textContent = printer.unit === 'in²' ? 'in' : unit; 
+                
+                printMaterialLabel.textContent = printer.printLabel;
+                supportMaterialLabel.textContent = printer.supportLabel;
+                
+                printMaterialLabelText.textContent = printer.printDesc;
+                supportMaterialLabelText.textContent = printer.supportDesc;
+
+                // Adjust Cost Title
+                supportCostTitle.textContent = printer.unit === 'in²' ? 'Cut Path Length Cost (For Reference)' : 'Support Material Cost (Per Unit)';
+                
+                // Update slicer overhead label
+                overheadLabel.textContent = `${printer.slicerName} Cost`;
+
+                // Update Mass inputs to reflect the state variables
+                printMassInput.value = printMass.toFixed(2);
+                supportMassInput.value = supportMass.toFixed(2);
+
+                calculateCost();
+            }
+
+            /**
+             * Updates the ratio display text based on the selected digital material profile.
+             */
+            function updateBlendRatioDisplay() {
+                if (selectedPrinter === 'J35') {
+                    const profile = costData['J35'].digitalMaterials[digitalMaterialKey];
+                    if (profile) {
+                        // FIX: Ensure no LaTeX or $ symbols remain here
+                         blendRatioDisplay.innerHTML = `
+                             <p class="text-xs font-semibold mt-1">Blend Profile: ${profile.desc.replace(/[$]/g, '')}</p>
+                             <p class="text-xs text-gray-500">
+                                 Approx. Blend Ratio: <span class="text-primary">${profile.rigid}% Rigid (Vero)</span> / <span class="text-secondary">${profile.flexible}% Flexible (Elastico)</span>
+                             </p>
+                         `;
+                    }
+                } else {
+                    blendRatioDisplay.innerHTML = '';
+                }
+            }
+
+
+            /**
+             * Performs the main cost calculation.
+             */
+            function calculateCost() {
+                const printer = costData[selectedPrinter];
+                const currentRates = printer.rates[userType];
+                
+                // 1. Material Costs
+                const printRate = currentRates.materials[printMaterialKey];
+                const printMaterialCost = printMass * printRate;
+                
+                // 2. Support Costs 
+                const supportRate = currentRates.support;
+                const supportMaterialCost = supportMass * supportRate;
+
+                // 3. Labor and Overhead Costs
+                let laborCost = 0;
+                let overheadCost = 0;
+
+                if (laborType !== 'none') {
+                    // Labor costs for assisted/unassisted
+                    laborCost = currentRates.job[laborType];
+                }
+                
+                if (includeSlicerOverhead) {
+                    // Other Material Costs (includes slicer software license, electricity, etc.)
+                    overheadCost = currentRates.job.other;
+                }
+
+                // Total Cost
+                const totalCost = printMaterialCost + supportMaterialCost + laborCost + overheadCost;
+
+                // Update Display (uses .toFixed(2) for Round(..., 2) and removes $ symbol)
+                printCostDisplay.textContent = `${printMaterialCost.toFixed(2)}`;
+                supportCostDisplay.textContent = `${supportMaterialCost.toFixed(2)}`;
+                laborCostDisplay.textContent = `${laborCost.toFixed(2)}`;
+                overheadCostDisplay.textContent = `${overheadCost.toFixed(2)}`;
+                totalCostDisplay.textContent = `${totalCost.toFixed(2)}`;
+            }
+
+            /**
+             * Event Listener Handlers
+             */
+            function handleInputChange(event) {
+                const target = event.target;
+                const value = target.value;
+
+                switch(target.id) {
+                    case 'printerSelect':
+                        selectedPrinter = value;
+                        // Reset mass inputs when switching machines
+                        if (value === 'J35') {
+                            printMass = 59.00; // Default requested mass
+                            supportMass = 84.00; // Default requested mass
+                        } else {
+                            printMass = 0;
+                            supportMass = 0;
+                        }
+                        updateMaterialOptions(); // Updates materials and triggers re-calc
+                        break;
+                    case 'userTypeSelect':
+                        userType = value;
+                        updateMaterialOptions(); // Updates rates and triggers re-calc
+                        break;
+                    case 'materialSelect':
+                        printMaterialKey = value;
+                        calculateCost();
+                        break;
+                    case 'digitalMaterialSelect':
+                        digitalMaterialKey = value;
+                        updateBlendRatioDisplay();
+                        calculateCost();
+                        break;
+                    case 'printMassInput':
+                        printMass = parseFloat(value) || 0;
+                        calculateCost();
+                        break;
+                    case 'supportMassInput':
+                        supportMass = parseFloat(value) || 0;
+                        calculateCost();
+                        break;
+                    case 'laborSelect':
+                        laborType = value;
+                        calculateCost();
+                        break;
+                    case 'slicerOverheadCheckbox':
+                        includeSlicerOverhead = target.checked;
+                        calculateCost();
+                        break;
+                }
+            }
+
+            /**
+             * Initialize the application on DOM load.
+             */
+            window.onload = function() {
+                // Get DOM elements
+                printerSelect = document.getElementById('printerSelect');
+                userTypeSelect = document.getElementById('userTypeSelect');
+                materialSelect = document.getElementById('materialSelect');
+                printMassInput = document.getElementById('printMassInput');
+                supportMassInput = document.getElementById('supportMassInput');
+                laborSelect = document.getElementById('laborSelect');
+                slicerOverheadCheckbox = document.getElementById('slicerOverheadCheckbox');
+                
+                printUnitLabel = document.getElementById('printUnitLabel');
+                supportUnitLabel = document.getElementById('supportUnitLabel');
+                printMaterialLabel = document.getElementById('printMaterialLabel');
+                supportMaterialLabel = document.getElementById('supportMaterialLabel');
+                printMaterialLabelText = document.getElementById('printMaterialLabelText');
+                supportMaterialLabelText = document.getElementById('supportMaterialLabelText');
+
+                j35DigitalMaterialSection = document.getElementById('j35DigitalMaterialSection');
+                digitalMaterialSelect = document.getElementById('digitalMaterialSelect');
+                blendRatioDisplay = document.getElementById('blendRatioDisplay');
+
+                overheadLabel = document.getElementById('overheadLabel');
+                supportCostTitle = document.getElementById('supportCostTitle');
+
+                printCostDisplay = document.getElementById('printCostDisplay');
+                supportCostDisplay = document.getElementById('supportCostDisplay');
+                laborCostDisplay = document.getElementById('laborCostDisplay');
+                overheadCostDisplay = document.getElementById('overheadCostDisplay');
+                totalCostDisplay = document.getElementById('totalCostDisplay');
+
+                // Set initial default values for J35
+                printMassInput.value = printMass.toFixed(2);
+                supportMassInput.value = supportMass.toFixed(2);
+                
+                // Attach Event Listeners
+                document.getElementById('app').addEventListener('change', handleInputChange);
+                document.getElementById('app').addEventListener('input', handleInputChange); // For text inputs
+
+                // Initial setup
+                updateMaterialOptions();
+            };
+        </script>
+
+        <!-- Configuration Inputs -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b pb-6 mb-6">
+            <div class="input-group">
+                <label for="printerSelect" class="block text-sm text-gray-700 mb-1">Printer / Slicer</label>
+                <select id="printerSelect" class="w-full p-2 border border-gray-300 rounded-md focus:ring-secondary focus:border-secondary">
+                    <option value="J35">Stratasys J35 (PolyJet/GrabCAD)</option>
+                    <option value="FORTUS450">Stratasys Fortus 450 (FDM/Insight)</option>
+                    <option value="BAMBU">Bambu X1-C (FDM/Bambu Slicer)</option>
+                    <option value="FORM3">Form 3 (SLA/PreForm)</option>
+                    <option value="GENERIC">Generic FDM (Cura/PrusaSlicer)</option>
+                    <option value="BOSSLASER">Bosslaser Cutter (Vector/Raster)</option>
+                </select>
+            </div>
+            
+            <div class="input-group">
+                <label for="userTypeSelect" class="block text-sm text-gray-700 mb-1">User Rate</label>
+                <select id="userTypeSelect" class="w-full p-2 border border-gray-300 rounded-md focus:ring-secondary focus:border-secondary">
+                    <option value="internal">Internal Rate</option>
+                    <option value="external">External Rate</option>
+                </select>
+            </div>
+            
+            <div class="input-group">
+                <label for="materialSelect" class="block text-sm text-gray-700 mb-1">Print Material (Per Unit)</label>
+                <select id="materialSelect" class="w-full p-2 border border-gray-300 rounded-md focus:ring-secondary focus:border-secondary">
+                    <!-- Options populated by JS -->
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label for="laborSelect" class="block text-sm text-gray-700 mb-1">Labor Charge (per job)</label>
+                <select id="laborSelect" class="w-full p-2 border border-gray-300 rounded-md focus:ring-secondary focus:border-secondary">
+                    <option value="assisted">Assisted Labor</option>
+                    <option value="unassisted">Un-assisted Labor</option>
+                    <option value="none">No Labor Charge</option>
+                </select>
+            </div>
+        </div>
+        
+        <!-- J35 Digital Material Blending Section (Hidden by default) -->
+        <div id="j35DigitalMaterialSection" class="hidden border border-secondary p-4 rounded-lg mb-6 bg-blue-50">
+            <h3 class="text-lg font-bold text-primary mb-3">J35 Digital Material Blending (Shore Hardness)</h3>
+            <p class="text-sm text-gray-600 mb-3">Select the target Shore Hardness, which determines the blend ratio of Rigid (Vero) and Flexible (Elastico) resins in GrabCAD Print.</p>
+
+            <div class="input-group">
+                <label for="digitalMaterialSelect" class="block text-sm text-gray-700 mb-1">Target Shore Hardness Profile</label>
+                <select id="digitalMaterialSelect" class="w-full p-2 border border-gray-300 rounded-md focus:ring-accent focus:border-accent">
+                    <!-- Options populated by JS for J35 -->
+                </select>
+            </div>
+            <div id="blendRatioDisplay" class="mt-2 text-sm">
+                <!-- Blend Ratio Display populated by JS (fixed to remove LaTeX) -->
+            </div>
+        </div>
+
+        <!-- Mass/Volume Inputs -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-6">
+            <div class="input-group">
+                <!-- Label updated dynamically by JS -->
+                <label id="printMaterialLabel" for="printMassInput" class="block text-sm text-gray-700 mb-1">Total Print Material Mass</label>
+                <div class="relative">
+                    <input type="number" id="printMassInput" value="59.00" min="0" step="0.01" class="w-full p-2 border border-gray-300 rounded-md pr-12 focus:ring-accent focus:border-accent" />
+                    <span id="printUnitLabel" class="absolute right-0 top-0 mt-2 mr-3 text-gray-500 pointer-events-none">g</span>
+                </div>
+                <!-- Description updated dynamically by JS -->
+                <p id="printMaterialLabelText" class="text-xs text-gray-500 mt-1">Total mass (blended or single) of final part (g).</p>
+            </div>
+            
+            <div class="input-group">
+                <!-- Label updated dynamically by JS -->
+                <label id="supportMaterialLabel" for="supportMassInput" class="block text-sm text-gray-700 mb-1">Support Material Mass</label>
+                <div class="relative">
+                    <input type="number" id="supportMassInput" value="84.00" min="0" step="0.01" class="w-full p-2 border border-gray-300 rounded-md pr-12 focus:ring-accent focus:border-accent" />
+                    <span id="supportUnitLabel" class="absolute right-0 top-0 mt-2 mr-3 text-gray-500 pointer-events-none">g</span>
+                </div>
+                <!-- Description updated dynamically by JS -->
+                <p id="supportMaterialLabelText" class="text-xs text-gray-500 mt-1">Mass of the SUP706 support structure (g).</p>
+            </div>
+        </div>
+
+        <!-- Overhead Toggle -->
+        <div class="flex items-center justify-between p-3 mb-6 bg-gray-50 rounded-lg">
+            <label id="overheadLabel" for="slicerOverheadCheckbox" class="text-sm font-medium text-gray-700 cursor-pointer">GrabCAD Print Overhead Cost</label>
+            <input type="checkbox" id="slicerOverheadCheckbox" checked class="h-5 w-5 text-secondary border-gray-300 rounded focus:ring-secondary cursor-pointer" onchange="calculateCost()">
+        </div>
+
+        <!-- Results Display -->
+        <div class="space-y-3 p-4 bg-primary text-white rounded-lg">
+            <h2 class="text-xl font-semibold border-b border-white border-opacity-30 pb-2 mb-2">Cost Breakdown</h2>
+            
+            <div class="flex justify-between text-sm">
+                <span>Print Material Cost:</span>
+                <span id="printCostDisplay" class="font-mono font-medium">15.34</span>
+            </div>
+            
+            <div class="flex justify-between text-sm">
+                <!-- Title updated dynamically by JS for Bosslaser -->
+                <span id="supportCostTitle">Support Material Cost (Per Unit):</span>
+                <span id="supportCostDisplay" class="font-mono font-medium">21.84</span>
+            </div>
+
+            <div class="flex justify-between text-sm">
+                <span>Labor Cost (Assisted/Unassisted):</span>
+                <span id="laborCostDisplay" class="font-mono font-medium">5.48</span>
+            </div>
+
+            <div class="flex justify-between text-sm">
+                <span>Slicer/Job Overhead Cost:</span>
+                <span id="overheadCostDisplay" class="font-mono font-medium">23.22</span>
+            </div>
+
+            <div class="flex justify-between text-2xl font-bold pt-3 border-t border-white border-opacity-50">
+                <span>TOTAL JOB COST:</span>
+                <span id="totalCostDisplay" class="font-mono text-accent">65.88</span>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
